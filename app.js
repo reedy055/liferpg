@@ -4,7 +4,7 @@ const $ = s=>document.querySelector(s);
 const $$ = s=>Array.from(document.querySelectorAll(s));
 const vibrate = ms=>{ try{ if(state.settings.haptics && navigator.vibrate) navigator.vibrate(ms||40);}catch{} };
 const toast = (msg)=>{ const t=$("#toast"); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); };
-const uuid = ()=>crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+const uuid = ()=> (crypto && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 
 function todayGameDay(resetHour){
   const now = new Date();
@@ -37,10 +37,10 @@ const DEFAULT_STATE = {
     {id:uuid(), name:'Dessert', cost:60, cooldownDays:0, active:true},
     {id:uuid(), name:'Gadget fund +$10', cost:150, cooldownDays:0, active:true},
   ],
-  assigned: {},           // { "YYYY-MM-DD": [challengeIds...] }
-  rerolls: {},            // { "YYYY-MM-DD": number }
-  progress: {},           // { "YYYY-MM-DD": {points, completions, coinsEarned, coinsSpent} }
-  logs: []                // append-only
+  assigned: {},
+  rerolls: {},
+  progress: {},
+  logs: []
 };
 
 let state = null;
@@ -58,45 +58,41 @@ async function save(){ await DB.setState(state); }
 function ensureDay(){
   const gd = todayGameDay(state.settings.resetHour);
   if(state.today.day !== gd){
-    // new day: reset today points; reset per-day done counts (implicit)
     state.today.day = gd;
     state.today.points = 0;
-    // new challenge assignment if not exists
     if(!state.assigned[gd]) assignDailyChallenges(gd);
   } else {
     if(!state.assigned[gd]) assignDailyChallenges(gd);
   }
 }
 function assignDailyChallenges(dayStr){
-  const pool = state.challenges.filter(c=>c.active);
-  const prev = Object.keys(state.assigned).sort().slice(-1)[0];
+  const pool = state.challenges.filter(function(c){ return c.active; });
+  const keys = Object.keys(state.assigned);
+  const prev = keys.length ? keys.sort().slice(-1)[0] : null;
   const prevSet = new Set(prev ? state.assigned[prev] : []);
-  let picks = [];
+  var picks = [];
   const avoidPrev = pool.length>=6;
   const candidates = pool.slice();
-  // random unique picks
   while(picks.length<3 && candidates.length){
     const idx = Math.floor(Math.random()*candidates.length);
     const c = candidates.splice(idx,1)[0];
     if(avoidPrev && prevSet.has(c.id)) continue;
-    if(!picks.find(x=>x===c.id)) picks.push(c.id);
+    if(picks.indexOf(c.id)===-1) picks.push(c.id);
   }
-  // if not enough (tiny pool), fill ignoring prev
-  const rest = state.challenges.filter(c=>c.active && !picks.includes(c.id));
+  const rest = state.challenges.filter(function(c){ return c.active && picks.indexOf(c.id)===-1; });
   while(picks.length<3 && rest.length){
     const idx = Math.floor(Math.random()*rest.length);
     picks.push(rest.splice(idx,1)[0].id);
   }
   state.assigned[dayStr] = picks;
-  state.rerolls[dayStr] = state.rerolls[dayStr] || 0;
+  if(typeof state.rerolls[dayStr] !== 'number') state.rerolls[dayStr] = 0;
 }
 
 // ---------- Currency / Streak / Logging ----------
 function firstCompletionStreakBump(){
   const gd = state.today.day;
   if(state.profile.lastCompletionDay === gd) return;
-  // if yesterday was the last completion day, continue streak; else start at 1
-  let newStreak = 1;
+  var newStreak = 1;
   if(state.profile.lastCompletionDay){
     const diff = dayDiff(gd, state.profile.lastCompletionDay);
     if(diff === 1) newStreak = state.streak.current + 1;
@@ -109,14 +105,14 @@ function firstCompletionStreakBump(){
 function addProgress(pointsDelta, coinsDelta, type, name, refId){
   const gd = state.today.day;
   state.today.points = Math.max(0, state.today.points + pointsDelta);
-  state.profile.coins = Math.max(0, state.profile.coins + (coinsDelta||0));
-  const p = state.progress[gd] || {points:0, completions:0, coinsEarned:0, coinsSpent:0};
-  p.points = Math.max(0, p.points + pointsDelta);
-  if(pointsDelta>0) p.completions += 1;
-  if(coinsDelta>0) p.coinsEarned += coinsDelta;
-  if(coinsDelta<0) p.coinsSpent += -coinsDelta;
-  state.progress[gd] = p;
-  state.logs.unshift({ ts:new Date().toISOString(), type, id:refId, name, points:pointsDelta>0?pointsDelta:0, coins:coinsDelta||0, day:gd });
+  state.profile.coins = Math.max(0, state.profile.coins + (coinsDelta || 0));
+  const cur = state.progress[gd] || {points:0, completions:0, coinsEarned:0, coinsSpent:0};
+  cur.points = Math.max(0, cur.points + pointsDelta);
+  if(pointsDelta>0) cur.completions += 1;
+  if(coinsDelta>0) cur.coinsEarned += coinsDelta;
+  if(coinsDelta<0) cur.coinsSpent += -coinsDelta;
+  state.progress[gd] = cur;
+  state.logs.unshift({ ts:new Date().toISOString(), type, id:refId, name, points:(pointsDelta>0?pointsDelta:0), coins:(coinsDelta||0), day:gd });
   if(pointsDelta>0) firstCompletionStreakBump();
 }
 
@@ -124,7 +120,7 @@ function canBuy(item){
   if(state.profile.coins < item.cost) return [false,'Not enough coins'];
   if(item.cooldownDays && item.lastBoughtDay){
     const diff = dayDiff(state.today.day, item.lastBoughtDay);
-    if(diff >=0 && diff < item.cooldownDays) return [false,`Cooldown ${item.cooldownDays-diff}d`];
+    if(diff >=0 && diff < item.cooldownDays) return [false,('Cooldown '+(item.cooldownDays-diff)+'d')];
   }
   return [true,''];
 }
@@ -132,7 +128,7 @@ function canBuy(item){
 // ---------- Actions ----------
 function completeTask(task){
   if(!task.active) return;
-  const key = `done:${state.today.day}:${task.id}`;
+  const key = 'done:'+state.today.day+':'+task.id;
   const doneCount = (state._done && state._done[key]) || 0;
   const cap = Math.max(1, task.perDayCap || 1);
   if(doneCount>=cap){ toast('Cap reached for today'); return; }
@@ -146,12 +142,12 @@ function completeTask(task){
 }
 
 function undoTask(task){
-  const key = `done:${state.today.day}:${task.id}`;
+  const key = 'done:'+state.today.day+':'+task.id;
   const doneCount = (state._done && state._done[key]) || 0;
   if(doneCount<=0){ toast('Nothing to undo today'); return; }
   state._done[key] = doneCount-1;
   const coins = (typeof task.coinsEarned==='number') ? task.coinsEarned : task.points;
-  addProgress(-task.points, -coins, 'task', `Undo ${task.name}`, task.id);
+  addProgress(-task.points, -coins, 'task', ('Undo '+task.name), task.id);
   vibrate(25);
   renderHome();
   save();
@@ -159,7 +155,7 @@ function undoTask(task){
 
 function completeChallenge(ch){
   if(!ch.active) return;
-  const key = `chal:${state.today.day}:${ch.id}`;
+  const key = 'chal:'+state.today.day+':'+ch.id;
   if(state._done && state._done[key]){ toast('Done today'); return; }
   state._done = state._done || {};
   state._done[key] = 1;
@@ -169,23 +165,24 @@ function completeChallenge(ch){
   renderHome(); save();
 }
 function undoChallenge(ch){
-  const key = `chal:${state.today.day}:${ch.id}`;
+  const key = 'chal:'+state.today.day+':'+ch.id;
   if(!(state._done && state._done[key])){ toast('Nothing to undo'); return; }
   state._done[key] = 0;
   const coins = (typeof ch.coinsEarned==='number') ? ch.coinsEarned : ch.points;
-  addProgress(-ch.points, -coins, 'challenge', `Undo ${ch.name}`, ch.id);
+  addProgress(-ch.points, -coins, 'challenge', ('Undo '+ch.name), ch.id);
   vibrate(25);
   renderHome(); save();
 }
 
 function buyItem(item){
-  const [ok,why] = canBuy(item);
+  const chk = canBuy(item);
+  const ok = chk[0], why = chk[1];
   if(!ok){ toast(why); return; }
   state.profile.coins -= item.cost;
   item.lastBoughtDay = state.today.day;
   addProgress(0, -item.cost, 'purchase', item.name, item.id);
   vibrate(20);
-  toast(`Bought ${item.name} (-${item.cost})`);
+  toast('Bought '+item.name+' (-'+item.cost+')');
   renderHome(); save();
 }
 
@@ -204,115 +201,130 @@ function reroll(){
 
 // ---------- Renderers ----------
 function setHeader(){
-  $("#pillCoins").textContent = `🪙 ${state.profile.coins}`;
-  $("#pillStreak").textContent = `🔥 ${state.streak.current}`;
+  $("#pillCoins").textContent = '🪙 '+state.profile.coins;
+  $("#pillStreak").textContent = '🔥 '+state.streak.current;
   $("#pointsToday").textContent = state.today.points;
 }
 
 function renderHome(){
   ensureDay();
   setHeader();
+
   // Daily challenges
   const cont = $("#dailyChallenges"); cont.innerHTML='';
   const ids = state.assigned[state.today.day] || [];
-  const poolMap = Object.fromEntries(state.challenges.map(x=>[x.id,x]));
-  ids.forEach(id=>{
+  const poolMap = {};
+  for(let i=0;i<state.challenges.length;i++){ poolMap[state.challenges[i].id]=state.challenges[i]; }
+  for(let i=0;i<ids.length;i++){
+    const id = ids[i];
     const ch = poolMap[id];
-    if(!ch) return;
-    const doneKey = `chal:${state.today.day}:${ch.id}`;
+    if(!ch) continue;
+    const doneKey = 'chal:'+state.today.day+':'+ch.id;
     const done = state._done && state._done[doneKey];
     const div = document.createElement('div'); div.className='item';
     const meta = document.createElement('div'); meta.className='meta';
-    meta.innerHTML = `<div class="title">${ch.name}</div><div class="sub">+${ch.points} pts, +${(ch.coinsEarned??ch.points)} coins</div>`;
+    const coins = (typeof ch.coinsEarned==='number') ? ch.coinsEarned : ch.points;
+    meta.innerHTML = '<div class="title">'+ch.name+'</div><div class="sub">+'+ch.points+' pts, +'+coins+' coins</div>';
     const btn = document.createElement('button'); btn.className='btn';
     btn.textContent = done ? 'Done ✓' : 'Do';
     btn.disabled = !!done || !ch.active;
-    btn.onclick = ()=> done ? null : completeChallenge(ch);
-    // small undo ghost
+    btn.onclick = function(){ if(!done && ch.active) completeChallenge(ch); };
     const undo = document.createElement('button'); undo.className='btn ghost'; undo.textContent='Undo';
-    undo.onclick = ()=> undoChallenge(ch);
+    undo.onclick = function(){ undoChallenge(ch); };
     div.append(meta, btn, undo);
     cont.appendChild(div);
-  });
-  // reroll hint
-  $("#rerollHint").textContent = `Rerolls today: ${(state.rerolls[state.today.day]||0)}/1 (Cost ${state.settings.rerollCost})`;
+  }
+  $("#rerollHint").textContent = 'Rerolls today: '+((state.rerolls[state.today.day]||0))+'/1 (Cost '+state.settings.rerollCost+')';
 
   // Tasks
   const tcont = $("#tasksList"); tcont.innerHTML='';
-  state.tasks.filter(t=>t.active).forEach(t=>{
-    const key = `done:${state.today.day}:${t.id}`;
+  for(let i=0;i<state.tasks.length;i++){
+    const t = state.tasks[i]; if(!t.active) continue;
+    const key = 'done:'+state.today.day+':'+t.id;
     const doneCount = (state._done && state._done[key]) || 0;
     const cap = Math.max(1, t.perDayCap||1);
     const div = document.createElement('div'); div.className='item';
     const meta = document.createElement('div'); meta.className='meta';
-    meta.innerHTML = `<div class="title">${t.name}</div><div class="sub">+${t.points} pts, +${(t.coinsEarned??t.points)} coins • ${doneCount}/${cap} today</div>`;
+    const coins = (typeof t.coinsEarned==='number') ? t.coinsEarned : t.points;
+    meta.innerHTML = '<div class="title">'+t.name+'</div><div class="sub">+'+t.points+' pts, +'+coins+' coins • '+doneCount+'/'+cap+' today</div>';
     const btn = document.createElement('button'); btn.className='btn';
     btn.textContent = doneCount>=cap ? 'Cap ✓' : 'Do';
     btn.disabled = doneCount>=cap;
-    btn.onclick = ()=> completeTask(t);
+    btn.onclick = (function(task){ return function(){ completeTask(task); }; })(t);
     const undo = document.createElement('button'); undo.className='btn ghost'; undo.textContent='Undo';
-    undo.onclick = ()=> undoTask(t);
+    undo.onclick = (function(task){ return function(){ undoTask(task); }; })(t);
     div.append(meta, btn, undo);
     tcont.appendChild(div);
-  });
+  }
 
   // Shop
   const scont = $("#shopStrip"); scont.innerHTML='';
-  state.shop.filter(s=>s.active).forEach(s=>{
+  for(let i=0;i<state.shop.length;i++){
+    const s = state.shop[i]; if(!s.active) continue;
     const card = document.createElement('div'); card.className='card buy-card';
     const title = document.createElement('div'); title.className='title'; title.textContent = s.name;
-    const kicker = document.createElement('div'); kicker.className='kicker'; kicker.textContent = s.cooldownDays?`Cooldown: ${s.cooldownDays}d`:'';
-    const btn = document.createElement('button'); btn.className='btn'; btn.textContent=`Buy (${s.cost})`;
-    const [ok,why] = canBuy(s);
+    const kicker = document.createElement('div'); kicker.className='kicker'; kicker.textContent = (s.cooldownDays?('Cooldown: '+s.cooldownDays+'d'):'');
+    const btn = document.createElement('button'); btn.className='btn'; btn.textContent='Buy ('+s.cost+')';
+    const chk = canBuy(s); const ok = chk[0];
     btn.disabled = !ok;
-    btn.onclick = ()=> buyItem(s);
+    btn.onclick = (function(item){ return function(){ buyItem(item); }; })(s);
     card.append(title, kicker, btn);
     scont.appendChild(card);
-  });
+  }
 }
 
 function renderStats(){
   $("#statCurrentStreak").textContent = state.streak.current;
   $("#statBestStreak").textContent = state.profile.bestStreak;
+
   // Heatmap last 90
   Charts.renderHeatmap($("#heatmap"), state.progress);
+
   // Last 30 data
   const today = new Date(state.today.day);
   const last30 = [];
   for(let i=29;i>=0;i--){
     const d = new Date(today); d.setDate(d.getDate()-i);
     const ds = d.toISOString().slice(0,10);
-    last30.push({ day:ds, points:(state.progress[ds]?.points)||0 });
+    const px = (state.progress[ds] && typeof state.progress[ds].points==='number') ? state.progress[ds].points : 0;
+    last30.push({ day:ds, points:px });
   }
   Charts.renderBar30($("#bar30"), last30);
+
   // 7-day stats
   let pts=0, ce=0, cs=0;
   for(let i=6;i>=0;i--){
     const d = new Date(today); d.setDate(d.getDate()-i);
     const ds = d.toISOString().slice(0,10);
-    pts += (state.progress[ds]?.points)||0;
-    ce += (state.progress[ds]?.coinsEarned)||0;
-    cs += (state.progress[ds]?.coinsSpent)||0;
+    const prog = state.progress[ds] || {points:0, coinsEarned:0, coinsSpent:0};
+    pts += (prog.points||0);
+    ce += (prog.coinsEarned||0);
+    cs += (prog.coinsSpent||0);
   }
   $("#statAvg7").textContent = Math.round(pts/7);
-  $("#statCoins7").textContent = `${ce} / ${cs}`;
+  $("#statCoins7").textContent = ce+' / '+cs;
 }
 
 function manageList(container, arr, type){
   container.innerHTML='';
-  arr.forEach(item=>{
+  for(let i=0;i<arr.length;i++){
+    const item = arr[i];
     const row = document.createElement('div'); row.className='row';
-    const name = document.createElement('div'); name.style.flex='1'; name.innerHTML = `<strong>${item.name}</strong> <span class="small">${item.active?'Active':'Archived'}</span>`;
+    const name = document.createElement('div'); name.style.flex='1'; name.innerHTML = '<strong>'+item.name+'</strong> <span class="small">'+(item.active?'Active':'Archived')+'</span>';
     const info = document.createElement('div'); info.className='small';
-    if(type!=='shop') info.textContent = `+${item.points} pts, +${(item.coinsEarned??item.points)} coins • cap ${Math.max(1,item.perDayCap||1)}`;
-    else info.textContent = `Cost ${item.cost}${item.cooldownDays?` • cooldown ${item.cooldownDays}d`:''}`;
+    if(type!=='shop'){
+      const coins = (typeof item.coinsEarned==='number') ? item.coinsEarned : item.points;
+      info.textContent = '+'+item.points+' pts, +'+coins+' coins • cap '+Math.max(1,item.perDayCap||1);
+    } else {
+      info.textContent = 'Cost '+item.cost+(item.cooldownDays?(' • cooldown '+item.cooldownDays+'d'):'');
+    }
     const edit = document.createElement('button'); edit.className='btn ghost'; edit.textContent='Edit';
-    edit.onclick = ()=> editItem(item, type);
+    edit.onclick = (function(it,ty){ return function(){ editItem(it,ty); }; })(item,type);
     const toggle = document.createElement('button'); toggle.className='btn'; toggle.textContent=item.active?'Archive':'Activate';
-    toggle.onclick = ()=>{ item.active=!item.active; renderManage(); save(); };
+    toggle.onclick = (function(it){ return function(){ it.active=!it.active; renderManage(); save(); }; })(item);
     row.append(name, info, edit, toggle);
     container.appendChild(row);
-  });
+  }
   if(arr.length===0){
     const hint = document.createElement('div'); hint.className='hint'; hint.textContent='No items yet.';
     container.appendChild(hint);
@@ -341,13 +353,12 @@ function editItem(item, type){
     item.name=newName; item.cost=cost; item.cooldownDays=cd;
   } else {
     const pts = promptInt('Points', item.points); if(pts===null) return;
-    const coins = promptInt('Coins (default = Points)', item.coinsEarned??item.points); if(coins===null) return;
-    let cap = item.perDayCap||1; if(type==='task'){ const c=promptInt('Per-day cap', cap); if(c===null) return; cap=c; }
+    const coins = promptInt('Coins (default = Points)', (typeof item.coinsEarned==='number'?item.coinsEarned:item.points)); if(coins===null) return;
+    var cap = item.perDayCap||1; if(type==='task'){ const c=promptInt('Per-day cap', cap); if(c===null) return; cap=c; }
     item.name=newName; item.points=pts; item.coinsEarned=coins; item.perDayCap=cap;
   }
   renderManage(); save();
 }
-
 function addTask(){
   const name = prompt('Task name'); if(!name) return;
   const pts = promptInt('Points', 10); if(pts===null) return;
@@ -381,10 +392,54 @@ function renderAll(){
 }
 
 function setupNav(){
-  $$('.tab').forEach(btn=>{
-    btn.onclick = ()=>{
-      $$('.tab').forEach(b=>b.classList.remove('active'));
+  const tabs = $$('.tab');
+  for(let i=0;i<tabs.length;i++){
+    const btn = tabs[i];
+    btn.onclick = function(){
+      for(let j=0;j<tabs.length;j++) tabs[j].classList.remove('active');
       btn.classList.add('active');
-      const t = btn.dataset.tab;
-      $$('.tabview').forEach(v=>v.classList.remove('active'));
-      $('#tab-'+t).classL
+      const t = btn.getAttribute('data-tab');
+      const views = $$('.tabview');
+      for(let k=0;k<views.length;k++) views[k].classList.remove('active');
+      $('#tab-'+t).classList.add('active');
+      if(t==='stats') renderStats();
+      if(t==='home') renderHome();
+      if(t==='manage') renderManage();
+      if(t==='settings') renderSettings();
+    };
+  }
+  $('#pillStreak').onclick = function(){ $$('.tab')[1].click(); };
+  $('#btnReroll').onclick = reroll;
+  $('#addTaskBtn').onclick = addTask;
+  $('#addChallengeBtn').onclick = addChallenge;
+  $('#addShopBtn').onclick = addShop;
+  $('#inpResetHour').onchange = function(e){ state.settings.resetHour = Math.min(23, Math.max(0, parseInt(e.target.value||'4',10))); ensureDay(); save(); renderAll(); };
+  $('#inpRerollCost').onchange = function(e){ state.settings.rerollCost = Math.max(0, parseInt(e.target.value||'20',10)); save(); };
+  $('#toggleHaptics').onchange = function(e){ state.settings.haptics = !!e.target.checked; save(); };
+  $('#btnExport').onclick = async function(){
+    const json = await DB.exportJSON();
+    const blob = new Blob([json], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'liferpg-export-'+Date.now()+'.json'; a.click();
+  };
+  $('#btnImport').onclick = function(){ $('#fileImport').click(); };
+  $('#fileImport').onchange = async function(e){
+    const file = e.target.files[0]; if(!file) return;
+    const text = await file.text();
+    try{ await DB.importJSON(text); toast('Imported'); }catch(err){ toast((err && err.message) || 'Import failed'); return; }
+    state = await DB.getState(); ensureDay(); renderAll();
+  };
+  $('#btnWipe').onclick = async function(){
+    if(!confirm('This will ERASE all data. Continue?')) return;
+    state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+    state.today.day = todayGameDay(state.settings.resetHour);
+    await DB.setState(state); renderAll(); toast('Wiped');
+  };
+}
+
+async function main(){
+  if('serviceWorker' in navigator){ try{ await navigator.serviceWorker.register('./sw.js'); }catch{} }
+  setupNav();
+  await loadState();
+}
+main();

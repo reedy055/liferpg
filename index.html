@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>LifeRPG</title>
+  <meta name="theme-color" content="#0B0F1A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="appHeader">
+    <div class="hero">
+      <div class="hero-top">
+        <div class="pill" id="pillCoins">🪙 0</div>
+        <div class="pill clickable" id="pillStreak">🔥 0</div>
+      </div>
+      <div class="points-today">
+        <div class="label">Points Today</div>
+        <div class="value" id="pointsToday">0</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="home">Home</button>
+      <button class="tab" data-tab="stats">Stats</button>
+      <button class="tab" data-tab="manage">Manage</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- HOME -->
+    <section id="tab-home" class="tabview active">
+      <div class="section">
+        <div class="section-header">
+          <h3>Daily Challenges</h3>
+          <button class="btn ghost" id="btnReroll">↻ Reroll</button>
+        </div>
+        <div id="dailyChallenges" class="list"></div>
+        <div class="hint small" id="rerollHint"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h3>Tasks</h3>
+        </div>
+        <div id="tasksList" class="list"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h3>Shop</h3>
+        </div>
+        <div id="shopStrip" class="strip"></div>
+      </div>
+    </section>
+
+    <!-- STATS -->
+    <section id="tab-stats" class="tabview">
+      <div class="cards-row">
+        <div class="card stat">
+          <div class="stat-title">Current Streak</div>
+          <div class="stat-value" id="statCurrentStreak">0</div>
+        </div>
+        <div class="card stat">
+          <div class="stat-title">Best Streak</div>
+          <div class="stat-value" id="statBestStreak">0</div>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Last 90 Days</h3>
+        <canvas id="heatmap" width="340" height="140"></canvas>
+      </div>
+      <div class="section">
+        <h3>Points (Last 30 Days)</h3>
+        <canvas id="bar30" width="340" height="200"></canvas>
+      </div>
+      <div class="cards-row">
+        <div class="card stat">
+          <div class="stat-title">Avg Points/Day (7d)</div>
+          <div class="stat-value" id="statAvg7">0</div>
+        </div>
+        <div class="card stat">
+          <div class="stat-title">Coins: Earned / Spent (7d)</div>
+          <div class="stat-value small" id="statCoins7">0 / 0</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MANAGE -->
+    <section id="tab-manage" class="tabview">
+      <div class="section">
+        <div class="section-header"><h3>Tasks</h3><button class="btn" id="addTaskBtn">+ Add</button></div>
+        <div id="manageTasks" class="manage-list"></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><h3>Challenge Pool</h3><button class="btn" id="addChallengeBtn">+ Add</button></div>
+        <div id="manageChallenges" class="manage-list"></div>
+      </div>
+      <div class="section">
+        <div class="section-header"><h3>Shop</h3><button class="btn" id="addShopBtn">+ Add</button></div>
+        <div id="manageShop" class="manage-list"></div>
+      </div>
+      <div class="hint small">Archive items instead of deleting to keep history intact.</div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="tabview">
+      <div class="section">
+        <h3>Game Day</h3>
+        <div class="row">
+          <label>Reset Hour (0–23)</label>
+          <input type="number" id="inpResetHour" min="0" max="23" value="4">
+        </div>
+        <div class="row">
+          <label>Reroll Cost (coins)</label>
+          <input type="number" id="inpRerollCost" min="0" max="999" value="20">
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="toggleHaptics" checked> Haptics on complete</label>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Data</h3>
+        <div class="row">
+          <button class="btn ghost" id="btnExport">Export JSON</button>
+          <input type="file" id="fileImport" accept="application/json" style="display:none;">
+          <button class="btn" id="btnImport">Import JSON</button>
+        </div>
+        <div class="row">
+          <button class="btn danger" id="btnWipe">Wipe All Data</button>
+        </div>
+      </div>
+      <div class="small hint">PWA installed? Add this site to Home Screen for an app-like experience.</div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script defer src="db.js"></script>
+  <script defer src="charts.js"></script>
+  <script defer src="app.js"></script>
+</body>
+</html>

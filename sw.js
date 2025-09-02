@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'liferpg-v1';
+const CACHE_VERSION = 'liferpg-v2';
 const ASSETS = [
   './','./index.html','./styles.css','./app.js','./db.js','./charts.js',
   './manifest.webmanifest','./assets/icon-192.png','./assets/icon-512.png','./assets/favicon.png'
